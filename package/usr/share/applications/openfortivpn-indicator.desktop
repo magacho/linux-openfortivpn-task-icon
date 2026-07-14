@@ -1,12 +1,18 @@
 [Desktop Entry]
 Type=Application
+Version=1.0
 Name=OpenFortiVPN Indicator
 Name[pt_BR]=Indicador OpenFortiVPN
+GenericName=VPN Indicator
+GenericName[pt_BR]=Indicador de VPN
 Comment=Tray icon to connect/disconnect openfortivpn and show status
 Comment[pt_BR]=Ícone na bandeja para conectar/desconectar o openfortivpn e ver o status
 Exec=/usr/bin/openfortivpn-indicator
-Icon=/usr/share/openfortivpn-indicator/icons/openfortivpn-disconnected.svg
+Icon=openfortivpn-indicator
 Terminal=false
-Categories=Network;System;
+Categories=Network;Security;
 Keywords=vpn;fortinet;forticlient;openfortivpn;
+StartupWMClass=openfortivpn-indicator
+StartupNotify=false
+X-GNOME-UsesNotifications=true
 X-GNOME-Autostart-enabled=true

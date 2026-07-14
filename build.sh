@@ -11,6 +11,10 @@ OUT="$HERE/openfortivpn-indicator_${VERSION}_all.deb"
 # Remove artefatos que não devem ir para o pacote.
 find "$PKG" -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
 
+# Mantém o autostart idêntico ao .desktop do menu (fonte única de verdade).
+cp "$PKG/usr/share/applications/openfortivpn-indicator.desktop" \
+   "$PKG/etc/xdg/autostart/openfortivpn-indicator.desktop"
+
 # Permissões corretas dentro do pacote.
 chmod 755 "$PKG/DEBIAN/postinst" "$PKG/DEBIAN/prerm" "$PKG/DEBIAN/postrm"
 chmod 755 "$PKG/usr/bin/openfortivpn-indicator"
