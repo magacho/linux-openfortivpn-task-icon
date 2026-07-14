@@ -118,7 +118,9 @@ class OpenFortiVPNIndicator:
             self.indicator.set_icon_theme_path(ICON_DIR)
 
         self.state = None
+        self.awaiting_auth = False     # aguardando login SSO/SAML no navegador
         self.last_auth_url = None      # evita reabrir a mesma URL repetidas vezes
+        self._last_label = None        # último texto de status aplicado (anti-flicker)
         self._monitor_proc = None      # processo journalctl -f
         self.menu = Gtk.Menu()
 
@@ -165,21 +167,45 @@ class OpenFortiVPNIndicator:
     # ---- atualização de estado / UI ------------------------------------
     def refresh(self):
         state = compute_state()
-        if state != self.state:
-            self.state = state
-            # Ao voltar a desconectado, esquece a URL para permitir reabrir
-            # numa próxima tentativa de conexão.
-            if state == DISCONNECTED:
-                self.last_auth_url = None
+        prev = self.state
+        self.state = state
+
+        # Limpa flags quando saímos da fase de conexão. Assim uma linha de
+        # login atrasada (chega pelo journal depois de já conectar) não deixa
+        # o status preso em "Autentique no navegador…".
+        if state == DISCONNECTED:
+            self.last_auth_url = None
+            self.awaiting_auth = False
+        elif state == CONNECTED:
+            self.awaiting_auth = False
+
+        # Ícone e itens do menu só mudam em transição de estado.
+        if state != prev:
             self.indicator.set_icon_full(STATE_ICON[state], STATE_LABEL[state])
-            label = STATE_LABEL[state]
-            if state == DISCONNECTED and service_failed():
-                label = "Falha (veja o log)"
-            self.status_item.set_label("Status: " + label)
-            self.indicator.set_title("OpenFortiVPN — " + label)
             self.connect_item.set_sensitive(state == DISCONNECTED)
             self.disconnect_item.set_sensitive(state != DISCONNECTED)
+
+        # O texto do status é recalculado a cada ciclo (auto-corrige).
+        self._set_status(self._status_label())
         return True  # mantém o timer ativo
+
+    def _status_label(self):
+        """Texto de status coerente com o estado atual."""
+        if self.state == CONNECTED:
+            return "Conectado"
+        if self.state == CONNECTING:
+            return "Autentique no navegador…" if self.awaiting_auth else "Conectando…"
+        # Desconectado
+        if service_failed():
+            return "Falha (veja o log)"
+        return "Desconectado"
+
+    def _set_status(self, label):
+        """Aplica o texto de status apenas quando muda (evita flicker)."""
+        if label != self._last_label:
+            self._last_label = label
+            self.status_item.set_label("Status: " + label)
+            self.indicator.set_title("OpenFortiVPN — " + label)
 
     # ---- monitor ao vivo da saída (login SSO/SAML) ---------------------
     def _start_monitor(self):
@@ -211,10 +237,15 @@ class OpenFortiVPNIndicator:
 
     def _on_auth_url(self, url):
         """Chamado na thread do GTK quando uma URL de login é detectada."""
+        # Se o túnel já subiu, esta é uma linha atrasada do journal: ignora
+        # (não reabre o navegador nem altera o status).
+        if self.state == CONNECTED:
+            return False
         if url == self.last_auth_url:
             return False  # já aberta nesta tentativa
         self.last_auth_url = url
-        self.status_item.set_label("Status: Autentique no navegador…")
+        self.awaiting_auth = True
+        self._set_status(self._status_label())
         self._notify(
             "OpenFortiVPN — login necessário",
             "Abrindo o navegador para autenticar a VPN.",
@@ -275,11 +306,13 @@ class OpenFortiVPNIndicator:
                 % CONFIG_FILE,
             )
             return
-        self.status_item.set_label("Status: Conectando…")
+        self._set_status("Conectando…")
         threading.Thread(target=self._systemctl, args=("start",), daemon=True).start()
 
     def on_disconnect(self, _item):
-        self.status_item.set_label("Status: Desconectando…")
+        self.awaiting_auth = False
+        self.last_auth_url = None
+        self._set_status("Desconectando…")
         threading.Thread(target=self._systemctl, args=("stop",), daemon=True).start()
 
     # ---- ações auxiliares ----------------------------------------------
