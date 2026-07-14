@@ -15,8 +15,8 @@ sem a regra, cai automaticamente para o pkexec, que pede senha).
 """
 
 import os
+import re
 import glob
-import shlex
 import subprocess
 import threading
 
@@ -38,6 +38,9 @@ SERVICE = "openfortivpn-indicator.service"
 CONFIG_FILE = "/etc/openfortivpn/config"
 ICON_DIR = "/usr/share/openfortivpn-indicator/icons"
 POLL_SECONDS = 3
+
+# openfortivpn imprime a URL de login SSO/SAML como: Authenticate at 'https://...'
+AUTH_URL_RE = re.compile(r"Authenticate at '([^']+)'")
 
 # Estados possíveis do túnel.
 DISCONNECTED = "disconnected"
@@ -115,6 +118,8 @@ class OpenFortiVPNIndicator:
             self.indicator.set_icon_theme_path(ICON_DIR)
 
         self.state = None
+        self.last_auth_url = None      # evita reabrir a mesma URL repetidas vezes
+        self._monitor_proc = None      # processo journalctl -f
         self.menu = Gtk.Menu()
 
         self.status_item = Gtk.MenuItem(label="Status: …")
@@ -153,11 +158,19 @@ class OpenFortiVPNIndicator:
         self.refresh()  # estado inicial imediato
         GLib.timeout_add_seconds(POLL_SECONDS, self.refresh)
 
+        # Monitor ao vivo da saída do openfortivpn (via journald): detecta a
+        # URL de login SSO/SAML assim que ela é impressa e abre o navegador.
+        self._start_monitor()
+
     # ---- atualização de estado / UI ------------------------------------
     def refresh(self):
         state = compute_state()
         if state != self.state:
             self.state = state
+            # Ao voltar a desconectado, esquece a URL para permitir reabrir
+            # numa próxima tentativa de conexão.
+            if state == DISCONNECTED:
+                self.last_auth_url = None
             self.indicator.set_icon_full(STATE_ICON[state], STATE_LABEL[state])
             label = STATE_LABEL[state]
             if state == DISCONNECTED and service_failed():
@@ -167,6 +180,70 @@ class OpenFortiVPNIndicator:
             self.connect_item.set_sensitive(state == DISCONNECTED)
             self.disconnect_item.set_sensitive(state != DISCONNECTED)
         return True  # mantém o timer ativo
+
+    # ---- monitor ao vivo da saída (login SSO/SAML) ---------------------
+    def _start_monitor(self):
+        """Segue o journal do serviço em tempo real, numa thread dedicada."""
+        t = threading.Thread(target=self._monitor_loop, daemon=True)
+        t.start()
+
+    def _monitor_loop(self):
+        # -o cat: só a mensagem (sem timestamps); --since=now: ignora o
+        # histórico e só reage a novos eventos; -f: segue continuamente.
+        cmd = ["journalctl", "-u", SERVICE, "-o", "cat", "--since=now", "-f"]
+        try:
+            self._monitor_proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                bufsize=1,  # line-buffered
+            )
+        except Exception:  # noqa: BLE001
+            self._monitor_proc = None
+            return
+
+        for line in self._monitor_proc.stdout:
+            match = AUTH_URL_RE.search(line)
+            if match:
+                url = match.group(1)
+                GLib.idle_add(self._on_auth_url, url)
+
+    def _on_auth_url(self, url):
+        """Chamado na thread do GTK quando uma URL de login é detectada."""
+        if url == self.last_auth_url:
+            return False  # já aberta nesta tentativa
+        self.last_auth_url = url
+        self.status_item.set_label("Status: Autentique no navegador…")
+        self._notify(
+            "OpenFortiVPN — login necessário",
+            "Abrindo o navegador para autenticar a VPN.",
+        )
+        try:
+            subprocess.Popen(
+                ["xdg-open", url],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception:  # noqa: BLE001
+            # Se falhar ao abrir, mostra a URL para o usuário copiar.
+            self._text_window(
+                "Autenticação necessária",
+                "Abra esta URL no navegador para autenticar a VPN:\n\n" + url,
+            )
+        return False
+
+    def _notify(self, title, body):
+        if _which("notify-send"):
+            try:
+                subprocess.Popen(
+                    ["notify-send", "-a", "OpenFortiVPN", "-i",
+                     STATE_ICON.get(self.state, APP_ID), title, body],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except Exception:  # noqa: BLE001
+                pass
 
     # ---- controle do serviço -------------------------------------------
     def _systemctl(self, action):
@@ -229,6 +306,11 @@ class OpenFortiVPNIndicator:
         subprocess.Popen(["pkexec", editor, CONFIG_FILE])
 
     def on_quit(self, _item):
+        if self._monitor_proc is not None:
+            try:
+                self._monitor_proc.terminate()
+            except Exception:  # noqa: BLE001
+                pass
         Gtk.main_quit()
 
     # ---- diálogos -------------------------------------------------------

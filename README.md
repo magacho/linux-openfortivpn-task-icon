@@ -20,6 +20,9 @@ As credenciais/endereço vêm do **arquivo de configuração padrão da CLI**:
   `openfortivpn -c /etc/openfortivpn/config` com privilégios de root.
 - O ícone da bandeja (app GTK do usuário) apenas dá `start`/`stop` nesse
   serviço e faz *polling* do estado a cada 3 s.
+- Em paralelo, o app **monitora a saída do `openfortivpn` ao vivo** (segue o
+  journal do serviço) para detectar a URL de login SSO/SAML e abrir o
+  navegador automaticamente (ver seção de SSO abaixo).
 - Uma regra polkit (`/usr/share/polkit-1/rules.d/50-openfortivpn-indicator.rules`)
   permite que membros do grupo `sudo` liguem/desliguem **apenas esse
   serviço** sem digitar a senha toda vez. Sem a regra, o app cai
@@ -48,6 +51,28 @@ username = seu.usuario
 password = sua_senha
 trusted-cert = <hash do certificado, se necessário>
 ```
+
+### Login SSO / SAML (abre o navegador automaticamente)
+
+Se a sua VPN usa **SSO/SAML**, adicione ao mesmo arquivo de config:
+
+```ini
+saml-login = 8020
+```
+
+Nesse modo o `openfortivpn` sobe um servidor local na porta 8020 e imprime
+uma URL de autenticação (`Authenticate at '...'`). O indicador **monitora a
+saída em tempo real** (via `journalctl -f`), detecta essa URL no instante em
+que ela aparece e **abre o navegador automaticamente** para você fazer o
+login. Ao concluir, o IdP redireciona para `http://127.0.0.1:8020/?id=...`,
+o `openfortivpn` captura a sessão e o túnel sobe.
+
+> Para o monitor ler a saída sem senha, seu usuário precisa poder ler o
+> journal do sistema — ou seja, estar no grupo `adm` (ou `systemd-journal`),
+> o que já é o padrão do usuário principal do Ubuntu.
+>
+> O `stdbuf -oL -eL` no serviço garante que a linha da URL não fique presa
+> em buffer e chegue ao monitor imediatamente.
 
 ## Usar
 
