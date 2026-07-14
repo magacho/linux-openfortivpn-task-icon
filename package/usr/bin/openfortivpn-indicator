@@ -43,7 +43,7 @@ POLL_SECONDS = 3
 # Metadados (usados na caixa "Sobre"). APP_VERSION é um fallback para quando
 # rodado a partir do fonte; instalado, a versão real vem do dpkg.
 APP_VERSION = "1.0.4"
-MAINTAINER = "Flavio Magacho <flavio.magacho@bemobi.com>"
+MAINTAINER = "Flavio Magacho <flavio@magacho.com>"
 WEBSITE = "https://github.com/magacho/linux-openfortivpn-task-icon"
 
 # Autostart por-usuário (sobrepõe a entrada de sistema em /etc/xdg/autostart).
@@ -432,7 +432,7 @@ class OpenFortiVPNIndicator:
         )
         dlg.set_website(WEBSITE)
         dlg.set_website_label("Repositório e Releases no GitHub")
-        dlg.set_authors(["Flavio Magacho <flavio.magacho@bemobi.com>"])
+        dlg.set_authors(["Flavio Magacho <flavio@magacho.com>"])
         dlg.set_copyright("© 2026 " + MAINTAINER)
         dlg.set_license_type(Gtk.License.MIT_X11)
         dlg.set_logo_icon_name(APP_ID)

@@ -24,12 +24,23 @@ jobs:
       - name: Verificar sintaxe do app
         run: python3 -c "import ast; ast.parse(open('package/usr/bin/openfortivpn-indicator').read())"
 
-      - name: Sincronizar versão no control e no app
+      - name: Sincronizar versão no control, no app e no metainfo
         run: |
-          sed -i "s/^Version: .*/Version: ${{ steps.ver.outputs.version }}/" package/DEBIAN/control
-          sed -i "s/^APP_VERSION = .*/APP_VERSION = \"${{ steps.ver.outputs.version }}\"/" package/usr/bin/openfortivpn-indicator
+          V="${{ steps.ver.outputs.version }}"
+          META=package/usr/share/metainfo/io.github.magacho.openfortivpn-indicator.metainfo.xml
+          sed -i "s/^Version: .*/Version: $V/" package/DEBIAN/control
+          sed -i "s/^APP_VERSION = .*/APP_VERSION = \"$V\"/" package/usr/bin/openfortivpn-indicator
+          sed -i "s#<release version=\"[0-9.]*\"#<release version=\"$V\"#" "$META"
+          sed -i "s#date=\"[0-9-]*\"#date=\"$(date +%F)\"#" "$META"
           grep '^Version:' package/DEBIAN/control
           grep '^APP_VERSION' package/usr/bin/openfortivpn-indicator
+          grep '<release version=' "$META"
+
+      - name: Validar AppStream metainfo (informativo)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y appstream
+          appstreamcli validate --no-net package/usr/share/metainfo/*.metainfo.xml || true
 
       - name: Construir o .deb
         run: bash build.sh

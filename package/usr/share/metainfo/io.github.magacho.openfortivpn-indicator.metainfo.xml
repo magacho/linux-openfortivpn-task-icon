@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.magacho.openfortivpn-indicator</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+
+  <name>OpenFortiVPN Indicator</name>
+  <name xml:lang="pt_BR">Indicador OpenFortiVPN</name>
+
+  <summary>Tray icon to connect to openfortivpn and monitor the tunnel</summary>
+  <summary xml:lang="pt_BR">Ícone de bandeja para conectar ao openfortivpn e monitorar o túnel</summary>
+
+  <description>
+    <p>
+      OpenFortiVPN Indicator adds a system tray icon to Ubuntu/GNOME that
+      connects and disconnects a Fortinet VPN through openfortivpn and shows
+      the tunnel state graphically (connected, connecting or disconnected).
+    </p>
+    <p>
+      It uses openfortivpn's default CLI configuration file
+      (/etc/openfortivpn/config) and controls a systemd service to bring the
+      tunnel up or down with the required privileges. For SSO/SAML gateways it
+      monitors the VPN output live and opens the login URL in your browser
+      automatically.
+    </p>
+    <p xml:lang="pt_BR">
+      O OpenFortiVPN Indicator adiciona um ícone na bandeja do Ubuntu/GNOME
+      que conecta e desconecta uma VPN Fortinet via openfortivpn e mostra o
+      estado do túnel graficamente (conectado, conectando ou desconectado).
+    </p>
+    <p xml:lang="pt_BR">
+      Usa o arquivo de configuração padrão da CLI do openfortivpn
+      (/etc/openfortivpn/config) e controla um serviço systemd para subir ou
+      derrubar o túnel com os privilégios necessários. Em gateways SSO/SAML,
+      monitora a saída da VPN ao vivo e abre a URL de login no navegador
+      automaticamente.
+    </p>
+    <ul>
+      <li>Connect / disconnect from the tray menu</li>
+      <li>Live status: connected, connecting, disconnected</li>
+      <li>Automatic SSO/SAML browser login</li>
+      <li>Optional start with the system (autostart toggle)</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">openfortivpn-indicator.desktop</launchable>
+  <provides>
+    <binary>openfortivpn-indicator</binary>
+  </provides>
+
+  <categories>
+    <category>Network</category>
+    <category>Security</category>
+  </categories>
+
+  <keywords>
+    <keyword>vpn</keyword>
+    <keyword>fortinet</keyword>
+    <keyword>forticlient</keyword>
+    <keyword>openfortivpn</keyword>
+    <keyword>saml</keyword>
+  </keywords>
+
+  <url type="homepage">https://github.com/magacho/linux-openfortivpn-task-icon</url>
+  <url type="bugtracker">https://github.com/magacho/linux-openfortivpn-task-icon/issues</url>
+  <url type="vcs-browser">https://github.com/magacho/linux-openfortivpn-task-icon</url>
+
+  <developer id="io.github.magacho">
+    <name>Flavio Magacho</name>
+  </developer>
+  <update_contact>flavio@magacho.com</update_contact>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="1.0.5" date="2026-07-14">
+      <description>
+        <p>App metadata for software centers, About dialog and autostart toggle.</p>
+      </description>
+    </release>
+  </releases>
+</component>
