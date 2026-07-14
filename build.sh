@@ -15,6 +15,11 @@ find "$PKG" -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || 
 cp "$PKG/usr/share/applications/openfortivpn-indicator.desktop" \
    "$PKG/etc/xdg/autostart/openfortivpn-indicator.desktop"
 
+# Copia a licença como o arquivo de copyright do pacote (convenção Debian).
+if [ -f "$HERE/LICENSE" ]; then
+    cp "$HERE/LICENSE" "$PKG/usr/share/doc/openfortivpn-indicator/copyright"
+fi
+
 # Permissões corretas dentro do pacote.
 chmod 755 "$PKG/DEBIAN/postinst" "$PKG/DEBIAN/prerm" "$PKG/DEBIAN/postrm"
 chmod 755 "$PKG/usr/bin/openfortivpn-indicator"

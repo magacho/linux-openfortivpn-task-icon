@@ -11,4 +11,4 @@ Description: Bandeja (tray) para controlar o openfortivpn no Ubuntu
  túnel (conectado, conectando ou desconectado). Usa o arquivo de
  configuração padrão da CLI do openfortivpn (/etc/openfortivpn/config)
  e um serviço systemd para subir/derrubar o túnel com privilégios.
-Installed-Size: 144
+Installed-Size: 152

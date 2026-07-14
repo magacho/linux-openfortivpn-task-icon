@@ -34,10 +34,23 @@ except (ValueError, ImportError):
 from gi.repository import Gtk, GLib
 
 APP_ID = "openfortivpn-indicator"
+PACKAGE = "openfortivpn-indicator"
 SERVICE = "openfortivpn-indicator.service"
 CONFIG_FILE = "/etc/openfortivpn/config"
 ICON_DIR = "/usr/share/openfortivpn-indicator/icons"
 POLL_SECONDS = 3
+
+# Metadados (usados na caixa "Sobre"). APP_VERSION é um fallback para quando
+# rodado a partir do fonte; instalado, a versão real vem do dpkg.
+APP_VERSION = "1.0.4"
+MAINTAINER = "Flavio Magacho <flavio.magacho@bemobi.com>"
+WEBSITE = "https://github.com/magacho/linux-openfortivpn-task-icon"
+
+# Autostart por-usuário (sobrepõe a entrada de sistema em /etc/xdg/autostart).
+AUTOSTART_FILE = os.path.expanduser(
+    "~/.config/autostart/openfortivpn-indicator.desktop"
+)
+SYSTEM_AUTOSTART = "/etc/xdg/autostart/openfortivpn-indicator.desktop"
 
 # openfortivpn imprime a URL de login SSO/SAML como: Authenticate at 'https://...'
 AUTH_URL_RE = re.compile(r"Authenticate at '([^']+)'")
@@ -72,6 +85,49 @@ def run(cmd):
         return p.returncode, p.stdout
     except Exception as exc:  # noqa: BLE001
         return 1, str(exc)
+
+
+def app_version():
+    """Versão instalada (autoritativa via dpkg); fallback para APP_VERSION."""
+    rc, out = run(["dpkg-query", "-W", "-f=${Version}", PACKAGE])
+    if rc == 0 and out.strip():
+        return out.strip()
+    return APP_VERSION
+
+
+def autostart_enabled():
+    """True se o indicador está configurado para iniciar no login."""
+    if os.path.exists(AUTOSTART_FILE):
+        try:
+            txt = open(AUTOSTART_FILE, encoding="utf-8").read().lower()
+        except OSError:
+            return os.path.exists(SYSTEM_AUTOSTART)
+        if "hidden=true" in txt or "x-gnome-autostart-enabled=false" in txt:
+            return False
+        return True
+    # Sem override do usuário: vale a entrada de sistema (habilitada).
+    return os.path.exists(SYSTEM_AUTOSTART)
+
+
+def set_autostart(enabled):
+    """Escreve o override por-usuário para ligar/desligar o autostart."""
+    os.makedirs(os.path.dirname(AUTOSTART_FILE), exist_ok=True)
+    content = (
+        "[Desktop Entry]\n"
+        "Type=Application\n"
+        "Name=OpenFortiVPN Indicator\n"
+        "Comment=Indicador de VPN na bandeja\n"
+        "Exec=/usr/bin/openfortivpn-indicator\n"
+        "Icon=openfortivpn-indicator\n"
+        "Terminal=false\n"
+        "X-GNOME-Autostart-enabled=%s\n"
+        "Hidden=%s\n"
+    ) % (
+        "true" if enabled else "false",
+        "false" if enabled else "true",
+    )
+    with open(AUTOSTART_FILE, "w", encoding="utf-8") as fh:
+        fh.write(content)
 
 
 def service_is_active():
@@ -140,6 +196,15 @@ class OpenFortiVPNIndicator:
 
         self.menu.append(Gtk.SeparatorMenuItem())
 
+        # Toggle de autostart (por-usuário). set_active ANTES de conectar o
+        # sinal para o handler não disparar durante a montagem do menu.
+        self.autostart_item = Gtk.CheckMenuItem(label="Iniciar com o sistema")
+        self.autostart_item.set_active(autostart_enabled())
+        self._autostart_handler = self.autostart_item.connect(
+            "toggled", self.on_toggle_autostart
+        )
+        self.menu.append(self.autostart_item)
+
         log_item = Gtk.MenuItem(label="Ver log…")
         log_item.connect("activate", self.on_view_log)
         self.menu.append(log_item)
@@ -149,6 +214,10 @@ class OpenFortiVPNIndicator:
         self.menu.append(config_item)
 
         self.menu.append(Gtk.SeparatorMenuItem())
+
+        about_item = Gtk.MenuItem(label="Sobre…")
+        about_item.connect("activate", self.on_about)
+        self.menu.append(about_item)
 
         quit_item = Gtk.MenuItem(label="Sair")
         quit_item.connect("activate", self.on_quit)
@@ -340,6 +409,36 @@ class OpenFortiVPNIndicator:
             )
             return
         subprocess.Popen(["pkexec", editor, CONFIG_FILE])
+
+    def on_toggle_autostart(self, item):
+        try:
+            set_autostart(item.get_active())
+        except OSError as exc:
+            self._error_dialog("Não foi possível alterar o autostart", str(exc))
+            # Reverte o estado visual sem redisparar o handler.
+            item.handler_block(self._autostart_handler)
+            item.set_active(autostart_enabled())
+            item.handler_unblock(self._autostart_handler)
+
+    def on_about(self, _item):
+        dlg = Gtk.AboutDialog()
+        dlg.set_modal(True)
+        dlg.set_program_name("OpenFortiVPN Indicator")
+        dlg.set_version(app_version())
+        dlg.set_comments(
+            "Ícone de bandeja para conectar/desconectar o openfortivpn usando "
+            "o arquivo de configuração padrão da CLI, mostrando o estado do "
+            "túnel e abrindo o login SSO/SAML no navegador automaticamente."
+        )
+        dlg.set_website(WEBSITE)
+        dlg.set_website_label("Repositório e Releases no GitHub")
+        dlg.set_authors(["Flavio Magacho <flavio.magacho@bemobi.com>"])
+        dlg.set_copyright("© 2026 " + MAINTAINER)
+        dlg.set_license_type(Gtk.License.MIT_X11)
+        dlg.set_logo_icon_name(APP_ID)
+        dlg.set_icon_name(APP_ID)
+        dlg.run()
+        dlg.destroy()
 
     def on_quit(self, _item):
         if self._monitor_proc is not None:

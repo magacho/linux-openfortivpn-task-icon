@@ -24,10 +24,12 @@ jobs:
       - name: Verificar sintaxe do app
         run: python3 -c "import ast; ast.parse(open('package/usr/bin/openfortivpn-indicator').read())"
 
-      - name: Sincronizar versão no control
+      - name: Sincronizar versão no control e no app
         run: |
           sed -i "s/^Version: .*/Version: ${{ steps.ver.outputs.version }}/" package/DEBIAN/control
+          sed -i "s/^APP_VERSION = .*/APP_VERSION = \"${{ steps.ver.outputs.version }}\"/" package/usr/bin/openfortivpn-indicator
           grep '^Version:' package/DEBIAN/control
+          grep '^APP_VERSION' package/usr/bin/openfortivpn-indicator
 
       - name: Construir o .deb
         run: bash build.sh
