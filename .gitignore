@@ -1,0 +1,6 @@
+# Pacotes gerados
+*.deb
+
+# Artefatos Python
+__pycache__/
+*.pyc

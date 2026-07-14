@@ -1,0 +1,13 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    remove|deconfigure)
+        # Garante que o túnel seja derrubado antes de remover o pacote.
+        if [ -d /run/systemd/system ]; then
+            systemctl stop openfortivpn-indicator.service || true
+        fi
+        ;;
+esac
+
+exit 0

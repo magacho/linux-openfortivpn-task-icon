@@ -1,0 +1,275 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+OpenFortiVPN Indicator
+======================
+Ícone de bandeja (taskbar) para Ubuntu/GNOME que controla o openfortivpn
+usando o arquivo de configuração padrão da CLI (/etc/openfortivpn/config)
+e mostra graficamente se o túnel está conectado, conectando ou desligado.
+
+O trabalho pesado (subir/derrubar a VPN, que exige root) é feito por um
+serviço systemd de sistema: openfortivpn-indicator.service. O usuário só
+precisa autorizar via polkit (uma regra instalada pelo pacote permite que
+membros do grupo "sudo" controlem esse serviço sem digitar senha toda vez;
+sem a regra, cai automaticamente para o pkexec, que pede senha).
+"""
+
+import os
+import glob
+import shlex
+import subprocess
+import threading
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+# Prefere a implementação Ayatana (Ubuntu atual); cai para a legada se preciso.
+try:
+    gi.require_version("AyatanaAppIndicator3", "0.1")
+    from gi.repository import AyatanaAppIndicator3 as AppIndicator
+except (ValueError, ImportError):
+    gi.require_version("AppIndicator3", "0.1")
+    from gi.repository import AppIndicator3 as AppIndicator
+
+from gi.repository import Gtk, GLib
+
+APP_ID = "openfortivpn-indicator"
+SERVICE = "openfortivpn-indicator.service"
+CONFIG_FILE = "/etc/openfortivpn/config"
+ICON_DIR = "/usr/share/openfortivpn-indicator/icons"
+POLL_SECONDS = 3
+
+# Estados possíveis do túnel.
+DISCONNECTED = "disconnected"
+CONNECTING = "connecting"
+CONNECTED = "connected"
+
+STATE_LABEL = {
+    DISCONNECTED: "Desconectado",
+    CONNECTING: "Conectando…",
+    CONNECTED: "Conectado",
+}
+STATE_ICON = {
+    DISCONNECTED: "openfortivpn-disconnected",
+    CONNECTING: "openfortivpn-connecting",
+    CONNECTED: "openfortivpn-connected",
+}
+
+
+def run(cmd):
+    """Executa um comando e devolve (rc, stdout+stderr)."""
+    try:
+        p = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=30,
+        )
+        return p.returncode, p.stdout
+    except Exception as exc:  # noqa: BLE001
+        return 1, str(exc)
+
+
+def service_is_active():
+    rc, _ = run(["systemctl", "is-active", "--quiet", SERVICE])
+    return rc == 0
+
+
+def service_failed():
+    rc, out = run(["systemctl", "is-failed", "--quiet", SERVICE])
+    return rc == 0
+
+
+def ppp_interface_up():
+    """openfortivpn cria uma interface pppN quando o túnel sobe de fato."""
+    for path in glob.glob("/sys/class/net/ppp*"):
+        name = os.path.basename(path)
+        try:
+            with open(os.path.join(path, "operstate")) as fh:
+                if fh.read().strip() in ("up", "unknown"):
+                    return True
+        except OSError:
+            # Interface existe: já é um bom sinal de túnel ativo.
+            return True
+    return False
+
+
+def compute_state():
+    if not service_is_active():
+        return DISCONNECTED
+    if ppp_interface_up():
+        return CONNECTED
+    return CONNECTING
+
+
+class OpenFortiVPNIndicator:
+    def __init__(self):
+        self.indicator = AppIndicator.Indicator.new(
+            APP_ID,
+            STATE_ICON[DISCONNECTED],
+            AppIndicator.IndicatorCategory.APPLICATION_STATUS,
+        )
+        self.indicator.set_status(AppIndicator.IndicatorStatus.ACTIVE)
+        if os.path.isdir(ICON_DIR):
+            self.indicator.set_icon_theme_path(ICON_DIR)
+
+        self.state = None
+        self.menu = Gtk.Menu()
+
+        self.status_item = Gtk.MenuItem(label="Status: …")
+        self.status_item.set_sensitive(False)
+        self.menu.append(self.status_item)
+
+        self.menu.append(Gtk.SeparatorMenuItem())
+
+        self.connect_item = Gtk.MenuItem(label="Conectar")
+        self.connect_item.connect("activate", self.on_connect)
+        self.menu.append(self.connect_item)
+
+        self.disconnect_item = Gtk.MenuItem(label="Desconectar")
+        self.disconnect_item.connect("activate", self.on_disconnect)
+        self.menu.append(self.disconnect_item)
+
+        self.menu.append(Gtk.SeparatorMenuItem())
+
+        log_item = Gtk.MenuItem(label="Ver log…")
+        log_item.connect("activate", self.on_view_log)
+        self.menu.append(log_item)
+
+        config_item = Gtk.MenuItem(label="Editar configuração…")
+        config_item.connect("activate", self.on_edit_config)
+        self.menu.append(config_item)
+
+        self.menu.append(Gtk.SeparatorMenuItem())
+
+        quit_item = Gtk.MenuItem(label="Sair")
+        quit_item.connect("activate", self.on_quit)
+        self.menu.append(quit_item)
+
+        self.menu.show_all()
+        self.indicator.set_menu(self.menu)
+
+        self.refresh()  # estado inicial imediato
+        GLib.timeout_add_seconds(POLL_SECONDS, self.refresh)
+
+    # ---- atualização de estado / UI ------------------------------------
+    def refresh(self):
+        state = compute_state()
+        if state != self.state:
+            self.state = state
+            self.indicator.set_icon_full(STATE_ICON[state], STATE_LABEL[state])
+            label = STATE_LABEL[state]
+            if state == DISCONNECTED and service_failed():
+                label = "Falha (veja o log)"
+            self.status_item.set_label("Status: " + label)
+            self.indicator.set_title("OpenFortiVPN — " + label)
+            self.connect_item.set_sensitive(state == DISCONNECTED)
+            self.disconnect_item.set_sensitive(state != DISCONNECTED)
+        return True  # mantém o timer ativo
+
+    # ---- controle do serviço -------------------------------------------
+    def _systemctl(self, action):
+        """Roda systemctl <action> no serviço, com fallback para pkexec.
+
+        Com a regra polkit instalada, o systemctl direto já é autorizado
+        sem senha para membros do grupo sudo. Se não, usamos pkexec.
+        """
+        rc, out = run(["systemctl", action, SERVICE])
+        if rc != 0:
+            rc, out = run(["pkexec", "systemctl", action, SERVICE])
+        if rc != 0:
+            GLib.idle_add(
+                self._error_dialog,
+                "Não foi possível %s a VPN." % (
+                    "conectar" if action == "start" else "desconectar"
+                ),
+                out,
+            )
+        GLib.idle_add(self.refresh)
+
+    def on_connect(self, _item):
+        if not os.path.exists(CONFIG_FILE):
+            self._error_dialog(
+                "Configuração não encontrada",
+                "O arquivo %s não existe.\n\n"
+                "Crie-o (como root) com host, porta, usuário etc. — é a "
+                "mesma configuração usada pela CLI do openfortivpn."
+                % CONFIG_FILE,
+            )
+            return
+        self.status_item.set_label("Status: Conectando…")
+        threading.Thread(target=self._systemctl, args=("start",), daemon=True).start()
+
+    def on_disconnect(self, _item):
+        self.status_item.set_label("Status: Desconectando…")
+        threading.Thread(target=self._systemctl, args=("stop",), daemon=True).start()
+
+    # ---- ações auxiliares ----------------------------------------------
+    def on_view_log(self, _item):
+        rc, out = run(
+            ["journalctl", "-u", SERVICE, "-n", "200", "--no-pager"]
+        )
+        if rc != 0 or not out.strip():
+            rc, out = run(
+                ["pkexec", "journalctl", "-u", SERVICE, "-n", "200", "--no-pager"]
+            )
+        self._text_window("Log do OpenFortiVPN", out or "(sem entradas de log)")
+
+    def on_edit_config(self, _item):
+        # Abre o config padrão como root em um editor gráfico, via pkexec.
+        editors = ["gnome-text-editor", "gedit", "kate", "xdg-open"]
+        editor = next((e for e in editors if _which(e)), None)
+        if editor is None:
+            self._error_dialog(
+                "Nenhum editor gráfico encontrado",
+                "Edite manualmente:\n  sudo nano %s" % CONFIG_FILE,
+            )
+            return
+        subprocess.Popen(["pkexec", editor, CONFIG_FILE])
+
+    def on_quit(self, _item):
+        Gtk.main_quit()
+
+    # ---- diálogos -------------------------------------------------------
+    def _error_dialog(self, title, message):
+        dlg = Gtk.MessageDialog(
+            transient_for=None,
+            modal=True,
+            message_type=Gtk.MessageType.ERROR,
+            buttons=Gtk.ButtonsType.OK,
+            text=title,
+        )
+        dlg.format_secondary_text(message)
+        dlg.run()
+        dlg.destroy()
+
+    def _text_window(self, title, content):
+        win = Gtk.Window(title=title)
+        win.set_default_size(760, 460)
+        win.set_position(Gtk.WindowPosition.CENTER)
+        scroll = Gtk.ScrolledWindow()
+        view = Gtk.TextView()
+        view.set_editable(False)
+        view.set_monospace(True)
+        view.get_buffer().set_text(content)
+        scroll.add(view)
+        win.add(scroll)
+        win.show_all()
+
+
+def _which(name):
+    return any(
+        os.access(os.path.join(p, name), os.X_OK)
+        for p in os.environ.get("PATH", "").split(os.pathsep)
+        if p
+    )
+
+
+def main():
+    OpenFortiVPNIndicator()
+    Gtk.main()
+
+
+if __name__ == "__main__":
+    main()

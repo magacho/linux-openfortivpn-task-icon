@@ -1,0 +1,16 @@
+[Unit]
+Description=OpenFortiVPN tunnel (controlado pelo indicador da bandeja)
+Documentation=man:openfortivpn(1)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Usa exatamente o arquivo de configuração padrão da CLI do openfortivpn.
+ExecStart=/usr/bin/openfortivpn -c /etc/openfortivpn/config
+# Deixa o openfortivpn restaurar as rotas/DNS ao encerrar.
+KillSignal=SIGINT
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

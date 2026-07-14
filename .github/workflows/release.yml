@@ -1,0 +1,46 @@
+name: Build and release .deb
+
+# Compila o pacote e publica uma Release apenas quando você criar uma
+# tag de versão (ex.: v1.0.0). A versão do .deb é derivada da tag.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Derivar versão da tag
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Verificar sintaxe do app
+        run: python3 -c "import ast; ast.parse(open('package/usr/bin/openfortivpn-indicator').read())"
+
+      - name: Sincronizar versão no control
+        run: |
+          sed -i "s/^Version: .*/Version: ${{ steps.ver.outputs.version }}/" package/DEBIAN/control
+          grep '^Version:' package/DEBIAN/control
+
+      - name: Construir o .deb
+        run: bash build.sh
+
+      - name: Validar o pacote (lintian, informativo)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y lintian
+          lintian --no-tag-display-limit openfortivpn-indicator_*.deb || true
+
+      - name: Publicar Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: openfortivpn-indicator_*.deb
+          generate_release_notes: true
+          fail_on_unmatched_files: true

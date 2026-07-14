@@ -1,0 +1,14 @@
+Package: openfortivpn-indicator
+Version: 1.0.0
+Section: net
+Priority: optional
+Architecture: all
+Depends: openfortivpn, python3-gi, gir1.2-gtk-3.0, gir1.2-ayatanaappindicator3-0.1, pkexec, systemd
+Maintainer: Flavio Magacho <flavio.magacho@bemobi.com>
+Description: Bandeja (tray) para controlar o openfortivpn no Ubuntu
+ Adiciona um ícone na barra de tarefas do Ubuntu/GNOME que conecta e
+ desconecta a VPN via openfortivpn e mostra graficamente o estado do
+ túnel (conectado, conectando ou desconectado). Usa o arquivo de
+ configuração padrão da CLI do openfortivpn (/etc/openfortivpn/config)
+ e um serviço systemd para subir/derrubar o túnel com privilégios.
+Installed-Size: 104

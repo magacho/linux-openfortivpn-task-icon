@@ -1,0 +1,36 @@
+#!/bin/sh
+set -e
+
+case "$1" in
+    configure)
+        # Recarrega units e habilita/ativa serviços conforme necessário.
+        if [ -d /run/systemd/system ]; then
+            systemctl daemon-reload || true
+        fi
+
+        # Cria um config padrão vazio (modo 600, root) se ainda não existir,
+        # para orientar o usuário. Não sobrescreve um config já existente.
+        if [ ! -e /etc/openfortivpn/config ]; then
+            mkdir -p /etc/openfortivpn
+            cat > /etc/openfortivpn/config <<'EOF'
+# Configuração do openfortivpn (usada pela CLI e pelo indicador da bandeja).
+# Preencha com os dados fornecidos pela sua organização e proteja o arquivo:
+#   sudo chmod 600 /etc/openfortivpn/config
+#
+# host = vpn.suaempresa.com
+# port = 443
+# username = seu.usuario
+# password = sua_senha
+# trusted-cert = <hash do certificado, se aplicável>
+EOF
+            chmod 600 /etc/openfortivpn/config
+        fi
+
+        # Atualiza o cache do banco de .desktop (ignora erro se ausente).
+        if command -v update-desktop-database >/dev/null 2>&1; then
+            update-desktop-database -q /usr/share/applications || true
+        fi
+        ;;
+esac
+
+exit 0
