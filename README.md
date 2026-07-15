@@ -88,6 +88,28 @@ aplicativos como **"OpenFortiVPN Indicator"**. No menu do ícone:
 > KStatusNotifierItem Support* para exibir ícones de bandeja. No Ubuntu
 > padrão (com a extensão da Ubuntu) já funciona.
 
+### Usuários de asdf / pyenv (gerenciadores de versão de Python)
+
+O app usa o shebang `#!/usr/bin/env python3` e depende do `python3-gi`
+(PyGObject), que fica instalado no Python **do sistema** (`/usr/bin/python3`).
+Se você usa **asdf**, **pyenv** ou outro gerenciador que coloca um shim de
+`python3` na frente do `PATH`, o `env python3` resolve para esse Python
+gerenciado, que normalmente não tem o módulo `gi`, e ao rodar o app pelo
+**terminal** você vê:
+
+```
+ModuleNotFoundError: No module named 'gi'
+```
+
+Isso afeta **apenas a execução manual pelo terminal**. O autostart do login e
+a entrada no menu de aplicativos usam um `PATH` limpo (com `/usr/bin` na
+frente), então o ícone sobe normalmente na sessão gráfica. Se quiser rodar
+pelo terminal mesmo assim, chame o Python do sistema explicitamente:
+
+```sh
+/usr/bin/python3 /usr/bin/openfortivpn-indicator
+```
+
 ## Desinstalar
 
 ```sh
